@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+// import non-existant file
+import Dummy from './non-existent';
+
 // Initial State Structures
 const initialTestCase = {
   id: '',            // Format: [Project]_[Feature]_[Number]
