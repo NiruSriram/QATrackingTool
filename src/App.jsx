@@ -31,12 +31,12 @@ const initialBug = {
   browser: '',
   device: '',
   appVersionBuild: '',
-  environmentConditions: '', // Added field
+  environmentConditions: '', 
   stepsToReproduce: '',
   expectedResult: '',
   actualResult: '',
-  attachments: '',           // Added field (Text/URL reference layout)
-  additionalNotes: ''        // Added field
+  attachments: null,         // Updated to store an object: { name, type, dataUrl }
+  additionalNotes: ''        
 };
 
 export default function App() {
@@ -114,7 +114,7 @@ export default function App() {
   const handleAddBug = (e) => {
     e.preventDefault();
 
-    // FIX: Check for Duplicate Bug ID before saving
+    // Check for Duplicate Bug ID before saving
     const bugIdExists = bugs.some(b => b.id.trim().toLowerCase() === bugForm.id.trim().toLowerCase());
     if (bugIdExists) {
       alert(`Validation Error: A bug report with ID "${bugForm.id}" already exists. Bug IDs must be unique.`);
@@ -123,6 +123,40 @@ export default function App() {
 
     setBugs([...bugs, bugForm]);
     setBugForm(initialBug);
+    
+    // Reset file input element manually
+    const fileInput = document.getElementById('bug-file-upload');
+    if (fileInput) fileInput.value = '';
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) {
+      setBugForm(prev => ({ ...prev, attachments: null }));
+      return;
+    }
+
+    // Enforce file extension / MIME filters
+    const validTypes = ['image/png', 'image/jpeg', 'application/pdf', 'text/plain'];
+    if (!validTypes.includes(file.type)) {
+      alert('Validation Error: Only PNG, JPG, PDF, or TXT file attachments are supported.');
+      e.target.value = ''; // Reset input element
+      return;
+    }
+
+    // Ingest data stream to base64 for persistent client memory tracking
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setBugForm(prev => ({
+        ...prev,
+        attachments: {
+          name: file.name,
+          type: file.type,
+          dataUrl: reader.result
+        }
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const updateBugStatus = (bugId, newStatus) => {
@@ -229,21 +263,25 @@ export default function App() {
             <input type="text" placeholder="Bug ID" required value={bugForm.id} onChange={e => setBugForm({...bugForm, id: e.target.value})} /><br/><br/>
             <input type="text" placeholder="Title" required value={bugForm.title} onChange={e => setBugForm({...bugForm, title: e.target.value})} /><br/><br/>
             
-            {/* Added Description Input Field */}
             <textarea placeholder="Description / Summary of Bug" value={bugForm.description} onChange={e => setBugForm({...bugForm, description: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
             
             <input type="text" placeholder="Linked Test Case ID" value={bugForm.testCaseId} onChange={e => setBugForm({...bugForm, testCaseId: e.target.value})} /><br/><br/>
             <input type="text" placeholder="Build" value={bugForm.appVersionBuild} onChange={e => setBugForm({...bugForm, appVersionBuild: e.target.value})} /><br/><br/>
             
-            {/* Added Environment Conditions Input Field */}
             <input type="text" placeholder="Environment Conditions (e.g. Staging, Stale Network)" value={bugForm.environmentConditions} onChange={e => setBugForm({...bugForm, environmentConditions: e.target.value})} style={{ width: '100%' }} /><br/><br/>
             
             <textarea placeholder="Steps to Reproduce" value={bugForm.stepsToReproduce} onChange={e => setBugForm({...bugForm, stepsToReproduce: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
             
-            {/* Added Attachments URL Reference Field */}
-            <input type="text" placeholder="Attachments (Paths / Links to screenshots)" value={bugForm.attachments} onChange={e => setBugForm({...bugForm, attachments: e.target.value})} style={{ width: '100%' }} /><br/><br/>
+            {/* UPDATED: Converted from text input to type="file" field with explicit type filters */}
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Upload Attachment (.png, .jpg, .pdf, .txt):</label>
+            <input 
+              id="bug-file-upload"
+              type="file" 
+              accept=".png,.jpg,.jpeg,.pdf,.txt" 
+              onChange={handleFileChange} 
+              style={{ width: '100%', background: '#fff', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} 
+            /><br/><br/>
 
-            {/* Added Additional Notes Input Field */}
             <textarea placeholder="Additional Notes" value={bugForm.additionalNotes} onChange={e => setBugForm({...bugForm, additionalNotes: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
             
             <label>Severity: </label>
@@ -263,22 +301,50 @@ export default function App() {
             <div key={bug.id} style={{ border: '1px solid #ffb3b3', backgroundColor: '#fff9f9', padding: '12px', margin: '10px 0', borderRadius: '4px' }}>
               <h4 style={{ margin: '0 0 8px 0' }}>{bug.id}: {bug.title}</h4>
               
-              {/* Added Display for Description */}
               <p style={{ margin: '4px 0', fontSize: '14px', color: '#444' }}><strong>Description:</strong> {bug.description || "None Specified"}</p>
               
               <p style={{ color: '#d32f2f', margin: '4px 0' }}><strong>Linked TC:</strong> {bug.testCaseId || "None"} | <strong>Build:</strong> {bug.appVersionBuild}</p>
               
-              {/* Added Display for Environment Conditions */}
               <p style={{ margin: '4px 0' }}><strong>Environment:</strong> {bug.environmentConditions || "None Specified"}</p>
               
               <p style={{ margin: '4px 0' }}><strong>Steps to Reproduce:</strong></p>
               <pre style={{ margin: '2px 0 6px 10px', whiteSpace: 'pre-wrap', fontSize: '13px', fontFamily: 'sans-serif', color: '#555' }}>{bug.stepsToReproduce}</pre>
               
-              {/* Added Display for Attachments */}
-              <p style={{ margin: '4px 0' }}><strong>Attachments:</strong> {bug.attachments || "No attachments"}</p>
+              {/* UPDATED: Dynamic layout processing depending on the specific asset format */}
+              <div style={{ margin: '8px 0', padding: '8px', background: '#f5f5f5', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
+                <strong>Attachment:</strong>{' '}
+                {bug.attachments ? (
+                  <div style={{ marginTop: '5px' }}>
+                    <span style={{ fontSize: '13px', color: '#333', display: 'block', marginBottom: '5px' }}>
+                      📄 {bug.attachments.name}
+                    </span>
+                    
+                    {/* Render inline preview for PNG/JPG images */}
+                    {bug.attachments.type.startsWith('image/') && (
+                      <img 
+                        src={bug.attachments.dataUrl} 
+                        alt={bug.attachments.name} 
+                        style={{ maxWidth: '100%', maxHeight: '150px', display: 'block', borderRadius: '4px', border: '1px solid #ccc' }} 
+                      />
+                    )}
+
+                    {/* Provide sandboxed view or download links for non-image types */}
+                    {(bug.attachments.type === 'application/pdf' || bug.attachments.type === 'text/plain') && (
+                      <a 
+                        href={bug.attachments.dataUrl} 
+                        download={bug.attachments.name} 
+                        style={{ display: 'inline-block', padding: '4px 8px', background: '#0288d1', color: '#fff', textDecoration: 'none', borderRadius: '3px', fontSize: '12px' }}
+                      >
+                        Download Document
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <span style={{ color: '#888', fontSize: '13px' }}>No file attached</span>
+                )}
+              </div>
               
-              {/* Added Display for Additional Notes */}
-              <p style={{ margin: '4px 0', fontStyle: 'italic', color: '#666' }}><strong>Notes:</strong> {bug.additionalNotes || "None"}</p>
+              <p style={{ margin: '4px 0' }}><strong>Notes:</strong> {bug.additionalNotes || "None"}</p>
               
               <p style={{ margin: '8px 0 4px 0' }}><strong>Severity:</strong> {bug.severity} | <strong>Priority:</strong> {bug.priority}</p>
               
