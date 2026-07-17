@@ -1,19 +1,18 @@
 import React, { useState } from 'react';
 
-
 // Initial State Structures
 const initialTestCase = {
   id: '',            // Format: [Project]_[Feature]_[Number]
   title: '',
   description: '',
   relatedRequirements: '',
-  priority: 'Medium',
-  preconditions: '', // Including system state / App Version or Build
-  build: '',         // Dedicated Build field (explicitly from Q2)
-  testData: '',
+  priority: 'Medium', // Dropdown field added to form
+  preconditions: '', // Text area field added to form
+  build: '',         // Dedicated Build field
+  testData: '',      // Input field added to form
   testSteps: '',
   expectedResult: '',
-  actualResult: '',
+  actualResult: '',  // Kept in state but hidden from the creation form
   status: 'Pass'     // Pass, Fail, Blocked
 };
 
@@ -24,8 +23,8 @@ const initialBug = {
   dateReported: '',
   assignedTo: '',
   description: '',
-  testCaseId: '',    // Ties back to the Test Case (explicitly from Q3)
-  status: 'New',      // New, Open, In Progress, Fixed, Verified, Regression Testing, Closed, Reopened
+  testCaseId: '',    // Ties back to the Test Case
+  status: 'New',      // Lifecycle statuses
   severity: 'Medium',
   priority: 'Medium',
   operatingSystem: '',
@@ -72,6 +71,11 @@ export default function App() {
     }));
   };
 
+  // Allow testers to update the Actual Result inline *after* the test case has been created
+  const updateTestCaseActualResult = (id, val) => {
+    setTestCases(prev => prev.map(tc => tc.id === id ? { ...tc, actualResult: val } : tc));
+  };
+
   const handleAddTestCase = (e) => {
     e.preventDefault();
     setTestCases([...testCases, testCaseForm]);
@@ -104,18 +108,45 @@ export default function App() {
             <input type="text" placeholder="ID (e.g. PROJ_LOGIN_01)" required value={testCaseForm.id} onChange={e => setTestCaseForm({...testCaseForm, id: e.target.value})} /><br/><br/>
             <input type="text" placeholder="Title" required value={testCaseForm.title} onChange={e => setTestCaseForm({...testCaseForm, title: e.target.value})} /><br/><br/>
             <input type="text" placeholder="App Version/Build" required value={testCaseForm.build} onChange={e => setTestCaseForm({...testCaseForm, build: e.target.value})} /><br/><br/>
-            <textarea placeholder="Steps" value={testCaseForm.testSteps} onChange={e => setTestCaseForm({...testCaseForm, testSteps: e.target.value})} /><br/><br/>
-            <input type="text" placeholder="Expected Result" value={testCaseForm.expectedResult} onChange={e => setTestCaseForm({...testCaseForm, expectedResult: e.target.value})} /><br/><br/>
-            <input type="text" placeholder="Actual Result" value={testCaseForm.actualResult} onChange={e => setTestCaseForm({...testCaseForm, actualResult: e.target.value})} /><br/><br/>
+            
+            <label>Priority: </label>
+            <select value={testCaseForm.priority} onChange={e => setTestCaseForm({...testCaseForm, priority: e.target.value})}>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Critical">Critical</option>
+            </select><br/><br/>
+
+            <textarea placeholder="Preconditions (System state / Setup)" value={testCaseForm.preconditions} onChange={e => setTestCaseForm({...testCaseForm, preconditions: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
+            <textarea placeholder="Test Data" value={testCaseForm.testData} onChange={e => setTestCaseForm({...testCaseForm, testData: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
+            <textarea placeholder="Steps" value={testCaseForm.testSteps} onChange={e => setTestCaseForm({...testCaseForm, testSteps: e.target.value})} style={{ width: '100%', height: '60px' }} /><br/><br/>
+            <input type="text" placeholder="Expected Result" value={testCaseForm.expectedResult} onChange={e => setTestCaseForm({...testCaseForm, expectedResult: e.target.value})} style={{ width: '100%' }} /><br/><br/>
+            
+            {/* Note: Actual Result field input removed from here to fulfill requirements */}
             <button type="submit">Add Test Case</button>
           </form>
 
           {/* Test Case List */}
           {testCases.map(tc => (
-            <div key={tc.id} style={{ border: '1px solid #ccc', padding: '10px', margin: '10px 0', borderRadius: '4px' }}>
+            <div key={tc.id} style={{ border: '1px solid #ccc', padding: '10px', margin: '10px 0', borderRadius: '4px', backgroundColor: '#fff' }}>
               <h4>{tc.id}: {tc.title}</h4>
-              <p><strong>Build:</strong> {tc.build} | <strong>Status:</strong> {tc.status}</p>
-              <p><strong>Actual Result:</strong> {tc.actualResult || "N/A"}</p>
+              <p><strong>Priority:</strong> {tc.priority} | <strong>Build:</strong> {tc.build} | <strong>Status:</strong> {tc.status}</p>
+              {tc.preconditions && <p><strong>Preconditions:</strong> {tc.preconditions}</p>}
+              {tc.testData && <p><strong>Test Data:</strong> {tc.testData}</p>}
+              <p><strong>Expected Result:</strong> {tc.expectedResult}</p>
+              
+              {/* Actual Result field now displays safely ONLY after creation for evaluation */}
+              <div style={{ marginTop: '10px', marginBottom: '10px', borderTop: '1px dashed #eee', paddingTop: '10px' }}>
+                <label><strong>Actual Result (Log after execution):</strong></label><br/>
+                <input 
+                  type="text" 
+                  placeholder="Type actual execution outcome..." 
+                  value={tc.actualResult} 
+                  onChange={e => updateTestCaseActualResult(tc.id, e.target.value)}
+                  style={{ width: '95%', padding: '4px', marginTop: '5px' }}
+                />
+              </div>
+
               <div>
                 <button onClick={() => updateTestCaseStatus(tc.id, 'Pass')}>Pass</button>{' '}
                 <button onClick={() => updateTestCaseStatus(tc.id, 'Fail')} style={{ backgroundColor: '#ffcccc' }}>Fail (Auto-Bug)</button>{' '}
