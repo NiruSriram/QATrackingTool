@@ -31,10 +31,12 @@ const initialBug = {
   browser: '',
   device: '',
   appVersionBuild: '',
+  environmentConditions: '', // Added field
   stepsToReproduce: '',
   expectedResult: '',
   actualResult: '',
-  additionalNotes: ''
+  attachments: '',           // Added field (Text/URL reference layout)
+  additionalNotes: ''        // Added field
 };
 
 export default function App() {
@@ -65,6 +67,7 @@ export default function App() {
             testCaseId: id,
             appVersionBuild: tc.build,
             title: `[BUG] Derived from failed Test Case ${id}`,
+            description: `Automatic failure ticket spawned from Test Case validation tracking for ID ${id}.`,
             stepsToReproduce: `1. Run test case ${id}\n2. Observed outcome: ${tc.actualResult || "Execution failed."}`,
             expectedResult: tc.expectedResult,
             actualResult: tc.actualResult
@@ -217,9 +220,23 @@ export default function App() {
             <h3>Log a Bug</h3>
             <input type="text" placeholder="Bug ID" required value={bugForm.id} onChange={e => setBugForm({...bugForm, id: e.target.value})} /><br/><br/>
             <input type="text" placeholder="Title" required value={bugForm.title} onChange={e => setBugForm({...bugForm, title: e.target.value})} /><br/><br/>
+            
+            {/* Added Description Input Field */}
+            <textarea placeholder="Description / Summary of Bug" value={bugForm.description} onChange={e => setBugForm({...bugForm, description: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
+            
             <input type="text" placeholder="Linked Test Case ID" value={bugForm.testCaseId} onChange={e => setBugForm({...bugForm, testCaseId: e.target.value})} /><br/><br/>
             <input type="text" placeholder="Build" value={bugForm.appVersionBuild} onChange={e => setBugForm({...bugForm, appVersionBuild: e.target.value})} /><br/><br/>
-            <textarea placeholder="Steps to Reproduce" value={bugForm.stepsToReproduce} onChange={e => setBugForm({...bugForm, stepsToReproduce: e.target.value})} /><br/><br/>
+            
+            {/* Added Environment Conditions Input Field */}
+            <input type="text" placeholder="Environment Conditions (e.g. Staging, Stale Network)" value={bugForm.environmentConditions} onChange={e => setBugForm({...bugForm, environmentConditions: e.target.value})} style={{ width: '100%' }} /><br/><br/>
+            
+            <textarea placeholder="Steps to Reproduce" value={bugForm.stepsToReproduce} onChange={e => setBugForm({...bugForm, stepsToReproduce: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
+            
+            {/* Added Attachments URL Reference Field */}
+            <input type="text" placeholder="Attachments (Paths / Links to screenshots)" value={bugForm.attachments} onChange={e => setBugForm({...bugForm, attachments: e.target.value})} style={{ width: '100%' }} /><br/><br/>
+
+            {/* Added Additional Notes Input Field */}
+            <textarea placeholder="Additional Notes" value={bugForm.additionalNotes} onChange={e => setBugForm({...bugForm, additionalNotes: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
             
             <label>Severity: </label>
             <select value={bugForm.severity} onChange={e => setBugForm({...bugForm, severity: e.target.value})}>
@@ -235,22 +252,41 @@ export default function App() {
 
           {/* Bugs List */}
           {bugs.map(bug => (
-            <div key={bug.id} style={{ border: '1px solid #ffb3b3', backgroundColor: '#fff9f9', padding: '10px', margin: '10px 0', borderRadius: '4px' }}>
-              <h4>{bug.id}: {bug.title}</h4>
-              <p style={{ color: '#d32f2f' }}><strong>Linked TC:</strong> {bug.testCaseId || "None"} | <strong>Build:</strong> {bug.appVersionBuild}</p>
-              <p><strong>Severity:</strong> {bug.severity} | <strong>Priority:</strong> {bug.priority}</p>
+            <div key={bug.id} style={{ border: '1px solid #ffb3b3', backgroundColor: '#fff9f9', padding: '12px', margin: '10px 0', borderRadius: '4px' }}>
+              <h4 style={{ margin: '0 0 8px 0' }}>{bug.id}: {bug.title}</h4>
               
-              <label><strong>Status Lifecycle:</strong> </label>
-              <select value={bug.status} onChange={e => updateBugStatus(bug.id, e.target.value)}>
-                <option value="New">New (Unreviewed)</option>
-                <option value="Open">Open (Accepted)</option>
-                <option value="In progress">In Progress</option>
-                <option value="Fixed">Fixed</option>
-                <option value="Verified">Verified</option>
-                <option value="Regression testing">Regression Testing</option>
-                <option value="Closed">Closed</option>
-                <option value="Reopened">Reopened</option>
-              </select>
+              {/* Added Display for Description */}
+              <p style={{ margin: '4px 0', fontSize: '14px', color: '#444' }}><strong>Description:</strong> {bug.description || "None Specified"}</p>
+              
+              <p style={{ color: '#d32f2f', margin: '4px 0' }}><strong>Linked TC:</strong> {bug.testCaseId || "None"} | <strong>Build:</strong> {bug.appVersionBuild}</p>
+              
+              {/* Added Display for Environment Conditions */}
+              <p style={{ margin: '4px 0' }}><strong>Environment:</strong> {bug.environmentConditions || "None Specified"}</p>
+              
+              <p style={{ margin: '4px 0' }}><strong>Steps to Reproduce:</strong></p>
+              <pre style={{ margin: '2px 0 6px 10px', whiteSpace: 'pre-wrap', fontSize: '13px', fontFamily: 'sans-serif', color: '#555' }}>{bug.stepsToReproduce}</pre>
+              
+              {/* Added Display for Attachments */}
+              <p style={{ margin: '4px 0' }}><strong>Attachments:</strong> {bug.attachments || "No attachments"}</p>
+              
+              {/* Added Display for Additional Notes */}
+              <p style={{ margin: '4px 0', fontStyle: 'italic', color: '#666' }}><strong>Notes:</strong> {bug.additionalNotes || "None"}</p>
+              
+              <p style={{ margin: '8px 0 4px 0' }}><strong>Severity:</strong> {bug.severity} | <strong>Priority:</strong> {bug.priority}</p>
+              
+              <div style={{ marginTop: '8px' }}>
+                <label><strong>Status Lifecycle:</strong> </label>
+                <select value={bug.status} onChange={e => updateBugStatus(bug.id, e.target.value)}>
+                  <option value="New">New (Unreviewed)</option>
+                  <option value="Open">Open (Accepted)</option>
+                  <option value="In progress">In Progress</option>
+                  <option value="Fixed">Fixed</option>
+                  <option value="Verified">Verified</option>
+                  <option value="Regression testing">Regression Testing</option>
+                  <option value="Closed">Closed</option>
+                  <option value="Reopened">Reopened</option>
+                </select>
+              </div>
             </div>
           ))}
         </div>
