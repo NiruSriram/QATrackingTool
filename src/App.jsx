@@ -113,6 +113,14 @@ export default function App() {
 
   const handleAddBug = (e) => {
     e.preventDefault();
+
+    // FIX: Check for Duplicate Bug ID before saving
+    const bugIdExists = bugs.some(b => b.id.trim().toLowerCase() === bugForm.id.trim().toLowerCase());
+    if (bugIdExists) {
+      alert(`Validation Error: A bug report with ID "${bugForm.id}" already exists. Bug IDs must be unique.`);
+      return;
+    }
+
     setBugs([...bugs, bugForm]);
     setBugForm(initialBug);
   };
