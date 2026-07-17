@@ -13,7 +13,7 @@ const initialTestCase = {
   testSteps: '',
   expectedResult: '',
   actualResult: '',  
-  status: 'Not Executed' // FIX: Default changed from 'Pass' to 'Not Executed'
+  status: 'Not Executed' 
 };
 
 const initialBug = {
@@ -83,6 +83,27 @@ export default function App() {
 
   const handleAddTestCase = (e) => {
     e.preventDefault();
+
+    // 1. Check for Duplicate Test Case ID
+    const idExists = testCases.some(tc => tc.id.trim().toLowerCase() === testCaseForm.id.trim().toLowerCase());
+    if (idExists) {
+      alert(`Validation Error: A test case with ID "${testCaseForm.id}" already exists. Test IDs must be unique.`);
+      return;
+    }
+
+    // 2. Validate Test Steps field is not blank
+    if (!testCaseForm.testSteps || testCaseForm.testSteps.trim() === '') {
+      alert('Validation Error: The "Test Steps" field cannot be left blank.');
+      return;
+    }
+
+    // 3. Validate Expected Result field is not blank
+    if (!testCaseForm.expectedResult || testCaseForm.expectedResult.trim() === '') {
+      alert('Validation Error: The "Expected Result" field cannot be left blank.');
+      return;
+    }
+
+    // If all validations pass, save the test case
     setTestCases([...testCases, testCaseForm]);
     setTestCaseForm(initialTestCase);
   };
@@ -123,8 +144,8 @@ export default function App() {
 
             <textarea placeholder="Preconditions (System state / Setup)" value={testCaseForm.preconditions} onChange={e => setTestCaseForm({...testCaseForm, preconditions: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
             <textarea placeholder="Test Data" value={testCaseForm.testData} onChange={e => setTestCaseForm({...testCaseForm, testData: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
-            <textarea placeholder="Steps" value={testCaseForm.testSteps} onChange={e => setTestCaseForm({...testCaseForm, testSteps: e.target.value})} style={{ width: '100%', height: '60px' }} /><br/><br/>
-            <input type="text" placeholder="Expected Result" value={testCaseForm.expectedResult} onChange={e => setTestCaseForm({...testCaseForm, expectedResult: e.target.value})} style={{ width: '100%' }} /><br/><br/>
+            <textarea placeholder="Steps (Required)" value={testCaseForm.testSteps} onChange={e => setTestCaseForm({...testCaseForm, testSteps: e.target.value})} style={{ width: '100%', height: '60px' }} /><br/><br/>
+            <input type="text" placeholder="Expected Result (Required)" value={testCaseForm.expectedResult} onChange={e => setTestCaseForm({...testCaseForm, expectedResult: e.target.value})} style={{ width: '100%' }} /><br/><br/>
             
             <button type="submit">Add Test Case</button>
           </form>
@@ -163,8 +184,8 @@ export default function App() {
                     <p style={{ margin: '4px 0' }}><strong>Preconditions:</strong> {tc.preconditions || "None Specified"}</p>
                     <p style={{ margin: '4px 0' }}><strong>Test Data:</strong> {tc.testData || "None Specified"}</p>
                     <p style={{ margin: '4px 0' }}><strong>Steps:</strong></p>
-                    <pre style={{ margin: '4px 0 8px 10px', whiteSpace: 'pre-wrap', fontFamily: 'sans-serif', color: '#444' }}>{tc.testSteps || "None Specified"}</pre>
-                    <p style={{ margin: '4px 0' }}><strong>Expected Result:</strong> {tc.expectedResult || "None Specified"}</p>
+                    <pre style={{ margin: '4px 0 8px 10px', whiteSpace: 'pre-wrap', fontFamily: 'sans-serif', color: '#444' }}>{tc.testSteps}</pre>
+                    <p style={{ margin: '4px 0' }}><strong>Expected Result:</strong> {tc.expectedResult}</p>
                   </div>
                 )}
 
