@@ -6,14 +6,14 @@ const initialTestCase = {
   title: '',
   description: '',
   relatedRequirements: '',
-  priority: 'Medium', // Dropdown field added to form
-  preconditions: '', // Text area field added to form
-  build: '',         // Dedicated Build field
-  testData: '',      // Input field added to form
+  priority: 'Medium', 
+  preconditions: '', 
+  build: '',         
+  testData: '',      
   testSteps: '',
   expectedResult: '',
-  actualResult: '',  // Kept in state but hidden from the creation form
-  status: 'Pass'     // Pass, Fail, Blocked
+  actualResult: '',  
+  status: 'Not Executed' // FIX: Default changed from 'Pass' to 'Not Executed'
 };
 
 const initialBug = {
@@ -23,8 +23,8 @@ const initialBug = {
   dateReported: '',
   assignedTo: '',
   description: '',
-  testCaseId: '',    // Ties back to the Test Case
-  status: 'New',      // Lifecycle statuses
+  testCaseId: '',    
+  status: 'New',      
   severity: 'Medium',
   priority: 'Medium',
   operatingSystem: '',
@@ -41,9 +41,16 @@ export default function App() {
   const [testCases, setTestCases] = useState([]);
   const [bugs, setBugs] = useState([]);
   
+  // Track which test cases are expanded (using an object map of ID -> boolean)
+  const [expandedTestCases, setExpandedTestCases] = useState({});
+
   // Forms state
   const [testCaseForm, setTestCaseForm] = useState(initialTestCase);
   const [bugForm, setBugForm] = useState(initialBug);
+
+  const toggleExpand = (id) => {
+    setExpandedTestCases(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Quick Action: Mark status & trigger Bug creation if "Fail"
   const updateTestCaseStatus = (id, newStatus) => {
@@ -62,7 +69,6 @@ export default function App() {
             expectedResult: tc.expectedResult,
             actualResult: tc.actualResult
           });
-          // Scroll to or focus bug form to let the tester submit it
           alert(`Test Case ${id} marked as Failed! Bug form pre-populated below.`);
         }
         return updated;
@@ -71,7 +77,6 @@ export default function App() {
     }));
   };
 
-  // Allow testers to update the Actual Result inline *after* the test case has been created
   const updateTestCaseActualResult = (id, val) => {
     setTestCases(prev => prev.map(tc => tc.id === id ? { ...tc, actualResult: val } : tc));
   };
@@ -97,7 +102,6 @@ export default function App() {
       <h1>QA Test Case & Bug Tracker</h1>
       <hr />
 
-      {/* Grid Layout to see side-by-side easily */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
         
         {/* ================= TEST CASES SECTION ================= */}
@@ -122,38 +126,67 @@ export default function App() {
             <textarea placeholder="Steps" value={testCaseForm.testSteps} onChange={e => setTestCaseForm({...testCaseForm, testSteps: e.target.value})} style={{ width: '100%', height: '60px' }} /><br/><br/>
             <input type="text" placeholder="Expected Result" value={testCaseForm.expectedResult} onChange={e => setTestCaseForm({...testCaseForm, expectedResult: e.target.value})} style={{ width: '100%' }} /><br/><br/>
             
-            {/* Note: Actual Result field input removed from here to fulfill requirements */}
             <button type="submit">Add Test Case</button>
           </form>
 
           {/* Test Case List */}
-          {testCases.map(tc => (
-            <div key={tc.id} style={{ border: '1px solid #ccc', padding: '10px', margin: '10px 0', borderRadius: '4px', backgroundColor: '#fff' }}>
-              <h4>{tc.id}: {tc.title}</h4>
-              <p><strong>Priority:</strong> {tc.priority} | <strong>Build:</strong> {tc.build} | <strong>Status:</strong> {tc.status}</p>
-              {tc.preconditions && <p><strong>Preconditions:</strong> {tc.preconditions}</p>}
-              {tc.testData && <p><strong>Test Data:</strong> {tc.testData}</p>}
-              <p><strong>Expected Result:</strong> {tc.expectedResult}</p>
-              
-              {/* Actual Result field now displays safely ONLY after creation for evaluation */}
-              <div style={{ marginTop: '10px', marginBottom: '10px', borderTop: '1px dashed #eee', paddingTop: '10px' }}>
-                <label><strong>Actual Result (Log after execution):</strong></label><br/>
-                <input 
-                  type="text" 
-                  placeholder="Type actual execution outcome..." 
-                  value={tc.actualResult} 
-                  onChange={e => updateTestCaseActualResult(tc.id, e.target.value)}
-                  style={{ width: '95%', padding: '4px', marginTop: '5px' }}
-                />
-              </div>
+          {testCases.map(tc => {
+            const isExpanded = !!expandedTestCases[tc.id];
+            
+            // UI Color mapping based on status
+            let statusColor = '#555';
+            if (tc.status === 'Pass') statusColor = '#2e7d32';
+            if (tc.status === 'Fail') statusColor = '#c62828';
+            if (tc.status === 'Blocked') statusColor = '#ef6c00';
 
-              <div>
-                <button onClick={() => updateTestCaseStatus(tc.id, 'Pass')}>Pass</button>{' '}
-                <button onClick={() => updateTestCaseStatus(tc.id, 'Fail')} style={{ backgroundColor: '#ffcccc' }}>Fail (Auto-Bug)</button>{' '}
-                <button onClick={() => updateTestCaseStatus(tc.id, 'Blocked')}>Block</button>
+            return (
+              <div key={tc.id} style={{ border: '1px solid #ccc', padding: '12px', margin: '10px 0', borderRadius: '4px', backgroundColor: '#fff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h4 style={{ margin: '0' }}>{tc.id}: {tc.title}</h4>
+                  <button 
+                    onClick={() => toggleExpand(tc.id)} 
+                    style={{ padding: '2px 8px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {isExpanded ? '▲ Hide Details' : '▼ Expand Details'}
+                  </button>
+                </div>
+                
+                <p style={{ margin: '8px 0 4px 0' }}>
+                  <strong>Priority:</strong> {tc.priority} | 
+                  <strong> Build:</strong> {tc.build} | 
+                  <strong> Status:</strong> <span style={{ color: statusColor, fontWeight: 'bold' }}>{tc.status}</span>
+                </p>
+                
+                {/* Collapsible content pane containing details fields */}
+                {isExpanded && (
+                  <div style={{ background: '#fcfcfc', border: '1px solid #eee', padding: '8px', margin: '8px 0', borderRadius: '4px', fontSize: '14px' }}>
+                    <p style={{ margin: '4px 0' }}><strong>Preconditions:</strong> {tc.preconditions || "None Specified"}</p>
+                    <p style={{ margin: '4px 0' }}><strong>Test Data:</strong> {tc.testData || "None Specified"}</p>
+                    <p style={{ margin: '4px 0' }}><strong>Steps:</strong></p>
+                    <pre style={{ margin: '4px 0 8px 10px', whiteSpace: 'pre-wrap', fontFamily: 'sans-serif', color: '#444' }}>{tc.testSteps || "None Specified"}</pre>
+                    <p style={{ margin: '4px 0' }}><strong>Expected Result:</strong> {tc.expectedResult || "None Specified"}</p>
+                  </div>
+                )}
+
+                <div style={{ marginTop: '10px', marginBottom: '10px', borderTop: '1px dashed #eee', paddingTop: '10px' }}>
+                  <label><strong>Actual Result (Log after execution):</strong></label><br/>
+                  <input 
+                    type="text" 
+                    placeholder="Type actual execution outcome..." 
+                    value={tc.actualResult} 
+                    onChange={e => updateTestCaseActualResult(tc.id, e.target.value)}
+                    style={{ width: '95%', padding: '4px', marginTop: '5px' }}
+                  />
+                </div>
+
+                <div style={{ marginTop: '8px' }}>
+                  <button onClick={() => updateTestCaseStatus(tc.id, 'Pass')} style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', padding: '4px 8px', cursor: 'pointer', borderRadius: '3px' }}>Pass</button>{' '}
+                  <button onClick={() => updateTestCaseStatus(tc.id, 'Fail')} style={{ backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2', padding: '4px 8px', cursor: 'pointer', borderRadius: '3px' }}>Fail (Auto-Bug)</button>{' '}
+                  <button onClick={() => updateTestCaseStatus(tc.id, 'Blocked')} style={{ backgroundColor: '#fff3e0', color: '#ef6c00', border: '1px solid #ffe0b2', padding: '4px 8px', cursor: 'pointer', borderRadius: '3px' }}>Block</button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* ================= BUGS SECTION ================= */}
