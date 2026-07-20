@@ -21,7 +21,7 @@ const initialBug = {
   title: '',
   reporter: '',
   dateReported: '',
-  assignedTo: '',
+  assignedTo: '',     // Stores the designated assignee string
   description: '',
   testCaseId: '',    
   status: 'New',      
@@ -35,7 +35,7 @@ const initialBug = {
   stepsToReproduce: '',
   expectedResult: '',
   actualResult: '',
-  attachments: null,         // Updated to store an object: { name, type, dataUrl }
+  attachments: null,         
   additionalNotes: ''        
 };
 
@@ -136,15 +136,13 @@ export default function App() {
       return;
     }
 
-    // Enforce file extension / MIME filters
     const validTypes = ['image/png', 'image/jpeg', 'application/pdf', 'text/plain'];
     if (!validTypes.includes(file.type)) {
       alert('Validation Error: Only PNG, JPG, PDF, or TXT file attachments are supported.');
-      e.target.value = ''; // Reset input element
+      e.target.value = ''; 
       return;
     }
 
-    // Ingest data stream to base64 for persistent client memory tracking
     const reader = new FileReader();
     reader.onloadend = () => {
       setBugForm(prev => ({
@@ -159,8 +157,37 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // FIX: Added inline linked Test Case ID dynamic editor
+  const updateBugTestCaseId = (bugId, val) => {
+    setBugs(prev => prev.map(b => b.id === bugId ? { ...b, testCaseId: val } : b));
+  };
+
+  // FIX: Intercept lifecycle transitions for explicit assignee prompting and cleanups
   const updateBugStatus = (bugId, newStatus) => {
-    setBugs(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus } : b));
+    setBugs(prev => prev.map(b => {
+      if (b.id !== bugId) return b;
+
+      let updatedAssignee = b.assignedTo;
+
+      // Rule A: Prompt for assignee when attempting to move to Open (Accepted)
+      if (newStatus === 'Open') {
+        const inputName = prompt("Assignee Required: Please enter the developer's name to accept this bug report:", b.assignedTo || "");
+        
+        // Block transition if cancelled or empty string
+        if (inputName === null || inputName.trim() === '') {
+          alert("Transition Aborted: An assignee name must be provided to move this bug to Open status.");
+          return b; 
+        }
+        updatedAssignee = inputName.trim();
+      }
+
+      // Rule B: Completely clear out the assignee context if moved to Verified
+      if (newStatus === 'Verified') {
+        updatedAssignee = '';
+      }
+
+      return { ...b, status: newStatus, assignedTo: updatedAssignee };
+    }));
   };
 
   return (
@@ -199,7 +226,6 @@ export default function App() {
           {testCases.map(tc => {
             const isExpanded = !!expandedTestCases[tc.id];
             
-            // UI Color mapping based on status
             let statusColor = '#555';
             if (tc.status === 'Pass') statusColor = '#2e7d32';
             if (tc.status === 'Fail') statusColor = '#c62828';
@@ -223,7 +249,6 @@ export default function App() {
                   <strong> Status:</strong> <span style={{ color: statusColor, fontWeight: 'bold' }}>{tc.status}</span>
                 </p>
                 
-                {/* Collapsible content pane containing details fields */}
                 {isExpanded && (
                   <div style={{ background: '#fcfcfc', border: '1px solid #eee', padding: '8px', margin: '8px 0', borderRadius: '4px', fontSize: '14px' }}>
                     <p style={{ margin: '4px 0' }}><strong>Preconditions:</strong> {tc.preconditions || "None Specified"}</p>
@@ -272,7 +297,6 @@ export default function App() {
             
             <textarea placeholder="Steps to Reproduce" value={bugForm.stepsToReproduce} onChange={e => setBugForm({...bugForm, stepsToReproduce: e.target.value})} style={{ width: '100%', height: '50px' }} /><br/><br/>
             
-            {/* UPDATED: Converted from text input to type="file" field with explicit type filters */}
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Upload Attachment (.png, .jpg, .pdf, .txt):</label>
             <input 
               id="bug-file-upload"
@@ -303,14 +327,32 @@ export default function App() {
               
               <p style={{ margin: '4px 0', fontSize: '14px', color: '#444' }}><strong>Description:</strong> {bug.description || "None Specified"}</p>
               
-              <p style={{ color: '#d32f2f', margin: '4px 0' }}><strong>Linked TC:</strong> {bug.testCaseId || "None"} | <strong>Build:</strong> {bug.appVersionBuild}</p>
+              {/* FIX: Converted Linked TC field to an editable active input field */}
+              <div style={{ margin: '6px 0', fontSize: '14px' }}>
+                <label htmlFor={`tc-input-${bug.id}`} style={{ color: '#d32f2f', fontWeight: 'bold' }}>Linked TC ID: </label>
+                <input 
+                  id={`tc-input-${bug.id}`}
+                  type="text" 
+                  value={bug.testCaseId} 
+                  onChange={e => updateBugTestCaseId(bug.id, e.target.value)} 
+                  style={{ width: '150px', padding: '2px 5px', fontSize: '13px', marginLeft: '5px', border: '1px solid #ffb3b3', borderRadius: '3px' }}
+                />
+                <span style={{ color: '#555', marginLeft: '15px' }}><strong>Build:</strong> {bug.appVersionBuild}</span>
+              </div>
+
+              {/* Display Current Active Developer Assignee Context */}
+              <p style={{ margin: '6px 0', fontSize: '14px' }}>
+                <strong>Current Assignee:</strong>{' '}
+                <span style={{ color: bug.assignedTo ? '#0288d1' : '#888', fontWeight: bug.assignedTo ? 'bold' : 'normal' }}>
+                  {bug.assignedTo || "Unassigned"}
+                </span>
+              </p>
               
               <p style={{ margin: '4px 0' }}><strong>Environment:</strong> {bug.environmentConditions || "None Specified"}</p>
               
               <p style={{ margin: '4px 0' }}><strong>Steps to Reproduce:</strong></p>
               <pre style={{ margin: '2px 0 6px 10px', whiteSpace: 'pre-wrap', fontSize: '13px', fontFamily: 'sans-serif', color: '#555' }}>{bug.stepsToReproduce}</pre>
               
-              {/* UPDATED: Dynamic layout processing depending on the specific asset format */}
               <div style={{ margin: '8px 0', padding: '8px', background: '#f5f5f5', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
                 <strong>Attachment:</strong>{' '}
                 {bug.attachments ? (
@@ -319,7 +361,6 @@ export default function App() {
                       📄 {bug.attachments.name}
                     </span>
                     
-                    {/* Render inline preview for PNG/JPG images */}
                     {bug.attachments.type.startsWith('image/') && (
                       <img 
                         src={bug.attachments.dataUrl} 
@@ -328,7 +369,6 @@ export default function App() {
                       />
                     )}
 
-                    {/* Provide sandboxed view or download links for non-image types */}
                     {(bug.attachments.type === 'application/pdf' || bug.attachments.type === 'text/plain') && (
                       <a 
                         href={bug.attachments.dataUrl} 
