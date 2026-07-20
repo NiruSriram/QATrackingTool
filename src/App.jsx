@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
 // Initial State Structures
 const initialTestCase = {
@@ -17,24 +18,17 @@ const initialTestCase = {
 };
 
 const initialBug = {
-  id: '',
-  title: '',
-  reporter: '',
-  dateReported: '',
+  id: '', 
+  title: '', 
   assignedTo: '',     // Stores the designated assignee string
   description: '',
   testCaseId: '',    
   status: 'New',      
   severity: 'Medium',
   priority: 'Medium',
-  operatingSystem: '',
-  browser: '',
-  device: '',
   appVersionBuild: '',
   environmentConditions: '', 
   stepsToReproduce: '',
-  expectedResult: '',
-  actualResult: '',
   attachments: null,         
   additionalNotes: ''        
 };
@@ -50,41 +44,80 @@ export default function App() {
   const [testCaseForm, setTestCaseForm] = useState(initialTestCase);
   const [bugForm, setBugForm] = useState(initialBug);
 
+  // Fetch initial data from Supabase on load
+  useEffect(() => {
+    fetchTestCases();
+    fetchBugs();
+  }, []);
+
+  const fetchTestCases = async () => {
+    const { data, error } = await supabase.from('test_cases').select('*').order('createdAt', { ascending: false });
+    if (error) console.error('Error fetching test cases:', error);
+    else setTestCases(data || []);
+  };
+
+  const fetchBugs = async () => {
+    const { data, error } = await supabase.from('bugs').select('*').order('createdAt', { ascending: false });
+    if (error) console.error('Error fetching bugs:', error);
+    else setBugs(data || []);
+  };
+
   const toggleExpand = (id) => {
     setExpandedTestCases(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   // Quick Action: Mark status & trigger Bug creation if "Fail"
-  const updateTestCaseStatus = (id, newStatus) => {
-    setTestCases(prev => prev.map(tc => {
-      if (tc.id === id) {
-        const updated = { ...tc, status: newStatus };
-        if (newStatus === 'Fail') {
-          // Auto-populate bug form with linked Test Case ID and build info!
-          setBugForm({
-            ...initialBug,
-            id: `BUG_${id}_${Date.now().toString().slice(-4)}`,
-            testCaseId: id,
-            appVersionBuild: tc.build,
-            title: `[BUG] Derived from failed Test Case ${id}`,
-            description: `Automatic failure ticket spawned from Test Case validation tracking for ID ${id}.`,
-            stepsToReproduce: `1. Run test case ${id}\n2. Observed outcome: ${tc.actualResult || "Execution failed."}`,
-            expectedResult: tc.expectedResult,
-            actualResult: tc.actualResult
-          });
-          alert(`Test Case ${id} marked as Failed! Bug form pre-populated below.`);
-        }
-        return updated;
-      }
-      return tc;
-    }));
+  const updateTestCaseStatus = async (id, newStatus) => {
+    const targetTC = testCases.find(tc => tc.id === id);
+    if (!targetTC) return;
+
+    // 1. Update status in Supabase
+    const { error } = await supabase
+      .from('test_cases')
+      .update({ status: newStatus })
+      .eq('id', id);
+
+    if (error) {
+      alert(`Database Error: Could not update status. ${error.message}`);
+      return;
+    }
+
+    // 2. Optimistically update local state
+    setTestCases(prev => prev.map(tc => tc.id === id ? { ...tc, status: newStatus } : tc));
+
+    // 3. Handle Auto-Bug trigger if status is Fail
+    if (newStatus === 'Fail') {
+      const generatedBugId = `BUG_${id}_${Date.now().toString().slice(-4)}`;
+      const autoBugData = {
+        ...initialBug,
+        id: generatedBugId,
+        testCaseId: id,
+        appVersionBuild: targetTC.build,
+        title: `[BUG] Derived from failed Test Case ${id}`,
+        description: `Automatic failure ticket spawned from Test Case validation tracking for ID ${id}.`,
+        stepsToReproduce: `1. Run test case ${id}\n2. Observed outcome: ${targetTC.actualResult || "Execution failed."}`,
+      };
+
+      // Set the bug form so the user sees it populated down below
+      setBugForm(autoBugData);
+      alert(`Test Case ${id} marked as Failed! Bug form pre-populated below.`);
+    }
   };
 
-  const updateTestCaseActualResult = (id, val) => {
+  const updateTestCaseActualResult = async (id, val) => {
+    // Local state shift for instant text input feedback
     setTestCases(prev => prev.map(tc => tc.id === id ? { ...tc, actualResult: val } : tc));
+
+    // Debounced or direct sync to Supabase
+    const { error } = await supabase
+      .from('test_cases')
+      .update({ actualResult: val })
+      .eq('id', id);
+      
+    if (error) console.error('Error syncing actual result:', error);
   };
 
-  const handleAddTestCase = (e) => {
+  const handleAddTestCase = async (e) => {
     e.preventDefault();
 
     // 1. Check for Duplicate Test Case ID
@@ -106,12 +139,18 @@ export default function App() {
       return;
     }
 
-    // If all validations pass, save the test case
-    setTestCases([...testCases, testCaseForm]);
+    // Write to Supabase
+    const { error } = await supabase.from('test_cases').insert([testCaseForm]);
+    if (error) {
+      alert(`Error creating test case: ${error.message}`);
+      return;
+    }
+
+    setTestCases([testCaseForm, ...testCases]);
     setTestCaseForm(initialTestCase);
   };
 
-  const handleAddBug = (e) => {
+  const handleAddBug = async (e) => {
     e.preventDefault();
 
     // Check for Duplicate Bug ID before saving
@@ -121,7 +160,14 @@ export default function App() {
       return;
     }
 
-    setBugs([...bugs, bugForm]);
+    // Write to Supabase
+    const { error } = await supabase.from('bugs').insert([bugForm]);
+    if (error) {
+      alert(`Error creating bug record: ${error.message}`);
+      return;
+    }
+
+    setBugs([bugForm, ...bugs]);
     setBugForm(initialBug);
     
     // Reset file input element manually
@@ -157,37 +203,55 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // FIX: Added inline linked Test Case ID dynamic editor
-  const updateBugTestCaseId = (bugId, val) => {
+  const updateBugTestCaseId = async (bugId, val) => {
+    // Update local state instantly
     setBugs(prev => prev.map(b => b.id === bugId ? { ...b, testCaseId: val } : b));
+
+    // Persist inline link update to backend
+    const { error } = await supabase
+      .from('bugs')
+      .update({ testCaseId: val })
+      .eq('id', bugId);
+      
+    if (error) console.error('Error linking test case:', error);
   };
 
-  // FIX: Intercept lifecycle transitions for explicit assignee prompting and cleanups
-  const updateBugStatus = (bugId, newStatus) => {
-    setBugs(prev => prev.map(b => {
-      if (b.id !== bugId) return b;
+  const updateBugStatus = async (bugId, newStatus) => {
+    const targetBug = bugs.find(b => b.id === bugId);
+    if (!targetBug) return;
 
-      let updatedAssignee = b.assignedTo;
+    let updatedAssignee = targetBug.assignedTo;
 
-      // Rule A: Prompt for assignee when attempting to move to Open (Accepted)
-      if (newStatus === 'Open') {
-        const inputName = prompt("Assignee Required: Please enter the developer's name to accept this bug report:", b.assignedTo || "");
-        
-        // Block transition if cancelled or empty string
-        if (inputName === null || inputName.trim() === '') {
-          alert("Transition Aborted: An assignee name must be provided to move this bug to Open status.");
-          return b; 
-        }
-        updatedAssignee = inputName.trim();
+    // Rule A: Prompt for assignee when attempting to move to Open (Accepted)
+    if (newStatus === 'Open') {
+      const inputName = prompt("Assignee Required: Please enter the developer's name to accept this bug report:", targetBug.assignedTo || "");
+      
+      // Block transition if cancelled or empty string
+      if (inputName === null || inputName.trim() === '') {
+        alert("Transition Aborted: An assignee name must be provided to move this bug to Open status.");
+        return; 
       }
+      updatedAssignee = inputName.trim();
+    }
 
-      // Rule B: Completely clear out the assignee context if moved to Verified
-      if (newStatus === 'Verified') {
-        updatedAssignee = '';
-      }
+    // Rule B: Completely clear out the assignee context if moved to Verified
+    if (newStatus === 'Verified') {
+      updatedAssignee = '';
+    }
 
-      return { ...b, status: newStatus, assignedTo: updatedAssignee };
-    }));
+    // Commit state changes to DB
+    const { error } = await supabase
+      .from('bugs')
+      .update({ status: newStatus, assignedTo: updatedAssignee })
+      .eq('id', bugId);
+
+    if (error) {
+      alert(`Database update aborted: ${error.message}`);
+      return;
+    }
+
+    // Update local react state
+    setBugs(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus, assignedTo: updatedAssignee } : b));
   };
 
   return (
@@ -264,7 +328,7 @@ export default function App() {
                   <input 
                     type="text" 
                     placeholder="Type actual execution outcome..." 
-                    value={tc.actualResult} 
+                    value={tc.actualResult || ''} 
                     onChange={e => updateTestCaseActualResult(tc.id, e.target.value)}
                     style={{ width: '95%', padding: '4px', marginTop: '5px' }}
                   />
@@ -327,13 +391,13 @@ export default function App() {
               
               <p style={{ margin: '4px 0', fontSize: '14px', color: '#444' }}><strong>Description:</strong> {bug.description || "None Specified"}</p>
               
-              {/* FIX: Converted Linked TC field to an editable active input field */}
+              {/* Linked TC field editor */}
               <div style={{ margin: '6px 0', fontSize: '14px' }}>
                 <label htmlFor={`tc-input-${bug.id}`} style={{ color: '#d32f2f', fontWeight: 'bold' }}>Linked TC ID: </label>
                 <input 
                   id={`tc-input-${bug.id}`}
                   type="text" 
-                  value={bug.testCaseId} 
+                  value={bug.testCaseId || ''} 
                   onChange={e => updateBugTestCaseId(bug.id, e.target.value)} 
                   style={{ width: '150px', padding: '2px 5px', fontSize: '13px', marginLeft: '5px', border: '1px solid #ffb3b3', borderRadius: '3px' }}
                 />
@@ -361,7 +425,7 @@ export default function App() {
                       📄 {bug.attachments.name}
                     </span>
                     
-                    {bug.attachments.type.startsWith('image/') && (
+                    {bug.attachments.type?.startsWith('image/') && (
                       <img 
                         src={bug.attachments.dataUrl} 
                         alt={bug.attachments.name} 
