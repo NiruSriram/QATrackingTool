@@ -13,14 +13,25 @@ export default function Auth() {
     setLoading(true);
     setErrorMsg('');
 
+    // Inside Auth.jsx -> handleAuth function
     if (isSigningUp) {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) setErrorMsg(error.message);
-      else alert('Account created successfully! You can now log in.');
+    const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+        // Send user to our manual confirmation page instead of direct login
+        emailRedirectTo: `${window.location.origin}/confirm`,
+        },
+    });
+
+    if (error) {
+        setErrorMsg(error.message);
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setErrorMsg(error.message);
+        alert('Check your inbox! We sent you a confirmation link.');
+        setIsSigningUp(false);
     }
+    }
+    
     setLoading(false);
   };
 

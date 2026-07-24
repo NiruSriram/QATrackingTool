@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
+import ConfirmEmail from './ConfirmEmail';
 
 // Initial State Structures
 const initialTestCase = {
@@ -45,6 +46,12 @@ export default function App() {
   // Forms state
   const [testCaseForm, setTestCaseForm] = useState(initialTestCase);
   const [bugForm, setBugForm] = useState(initialBug);
+
+  // Check if current URL path is the confirmation page
+  const isConfirmRoute = window.location.pathname.includes('/confirm') || 
+                         window.location.search.includes('code=') ||
+                         window.location.hash.includes('access_token=');
+  
 
   // 1. Auth Listener & Session Handler
   useEffect(() => {
@@ -284,6 +291,11 @@ export default function App() {
 
     setBugs(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus, assignedTo: updatedAssignee } : b));
   };
+
+  // 3. Render manual confirmation screen if user came from an email redirect
+  if (!session && isConfirmRoute) {
+    return <ConfirmEmail onConfirmed={() => window.location.href = '/'} />;
+  }
 
   // If user is not authenticated, render Auth screen
   if (!session) {
