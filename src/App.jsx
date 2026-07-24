@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import Auth from './Auth';
 
 // Initial State Structures
 const initialTestCase = {
@@ -20,7 +21,7 @@ const initialTestCase = {
 const initialBug = {
   id: '', 
   title: '', 
-  assignedTo: '',     // Stores the designated assignee string
+  assignedTo: '',     
   description: '',
   testCaseId: '',    
   status: 'New',      
@@ -34,32 +35,62 @@ const initialBug = {
 };
 
 export default function App() {
+  const [session, setSession] = useState(null);
   const [testCases, setTestCases] = useState([]);
   const [bugs, setBugs] = useState([]);
   
-  // Track which test cases are expanded (using an object map of ID -> boolean)
+  // Track which test cases are expanded
   const [expandedTestCases, setExpandedTestCases] = useState({});
 
   // Forms state
   const [testCaseForm, setTestCaseForm] = useState(initialTestCase);
   const [bugForm, setBugForm] = useState(initialBug);
 
-  // Fetch initial data from Supabase on load
+  // 1. Auth Listener & Session Handler
   useEffect(() => {
-    fetchTestCases();
-    fetchBugs();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  // 2. Fetch Data when active Session changes
+  useEffect(() => {
+    if (session) {
+      fetchTestCases();
+      fetchBugs();
+    }
+  }, [session]);
+
   const fetchTestCases = async () => {
-    const { data, error } = await supabase.from('test_cases').select('*').order('createdAt', { ascending: false });
+    const { data, error } = await supabase
+      .from('test_cases')
+      .select('*')
+      .order('createdAt', { ascending: false });
+      
     if (error) console.error('Error fetching test cases:', error);
     else setTestCases(data || []);
   };
 
   const fetchBugs = async () => {
-    const { data, error } = await supabase.from('bugs').select('*').order('createdAt', { ascending: false });
+    const { data, error } = await supabase
+      .from('bugs')
+      .select('*')
+      .order('createdAt', { ascending: false });
+      
     if (error) console.error('Error fetching bugs:', error);
     else setBugs(data || []);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setTestCases([]);
+    setBugs([]);
   };
 
   const toggleExpand = (id) => {
@@ -98,17 +129,14 @@ export default function App() {
         stepsToReproduce: `1. Run test case ${id}\n2. Observed outcome: ${targetTC.actualResult || "Execution failed."}`,
       };
 
-      // Set the bug form so the user sees it populated down below
       setBugForm(autoBugData);
       alert(`Test Case ${id} marked as Failed! Bug form pre-populated below.`);
     }
   };
 
   const updateTestCaseActualResult = async (id, val) => {
-    // Local state shift for instant text input feedback
     setTestCases(prev => prev.map(tc => tc.id === id ? { ...tc, actualResult: val } : tc));
 
-    // Debounced or direct sync to Supabase
     const { error } = await supabase
       .from('test_cases')
       .update({ actualResult: val })
@@ -139,38 +167,48 @@ export default function App() {
       return;
     }
 
+    // Attach user_id for multi-tenant mapping
+    const payload = {
+      ...testCaseForm,
+      user_id: session.user.id
+    };
+
     // Write to Supabase
-    const { error } = await supabase.from('test_cases').insert([testCaseForm]);
+    const { error } = await supabase.from('test_cases').insert([payload]);
     if (error) {
       alert(`Error creating test case: ${error.message}`);
       return;
     }
 
-    setTestCases([testCaseForm, ...testCases]);
+    setTestCases([payload, ...testCases]);
     setTestCaseForm(initialTestCase);
   };
 
   const handleAddBug = async (e) => {
     e.preventDefault();
 
-    // Check for Duplicate Bug ID before saving
     const bugIdExists = bugs.some(b => b.id.trim().toLowerCase() === bugForm.id.trim().toLowerCase());
     if (bugIdExists) {
       alert(`Validation Error: A bug report with ID "${bugForm.id}" already exists. Bug IDs must be unique.`);
       return;
     }
 
+    // Attach user_id for multi-tenant mapping
+    const payload = {
+      ...bugForm,
+      user_id: session.user.id
+    };
+
     // Write to Supabase
-    const { error } = await supabase.from('bugs').insert([bugForm]);
+    const { error } = await supabase.from('bugs').insert([payload]);
     if (error) {
       alert(`Error creating bug record: ${error.message}`);
       return;
     }
 
-    setBugs([bugForm, ...bugs]);
+    setBugs([payload, ...bugs]);
     setBugForm(initialBug);
     
-    // Reset file input element manually
     const fileInput = document.getElementById('bug-file-upload');
     if (fileInput) fileInput.value = '';
   };
@@ -204,10 +242,8 @@ export default function App() {
   };
 
   const updateBugTestCaseId = async (bugId, val) => {
-    // Update local state instantly
     setBugs(prev => prev.map(b => b.id === bugId ? { ...b, testCaseId: val } : b));
 
-    // Persist inline link update to backend
     const { error } = await supabase
       .from('bugs')
       .update({ testCaseId: val })
@@ -222,11 +258,9 @@ export default function App() {
 
     let updatedAssignee = targetBug.assignedTo;
 
-    // Rule A: Prompt for assignee when attempting to move to Open (Accepted)
     if (newStatus === 'Open') {
       const inputName = prompt("Assignee Required: Please enter the developer's name to accept this bug report:", targetBug.assignedTo || "");
       
-      // Block transition if cancelled or empty string
       if (inputName === null || inputName.trim() === '') {
         alert("Transition Aborted: An assignee name must be provided to move this bug to Open status.");
         return; 
@@ -234,12 +268,10 @@ export default function App() {
       updatedAssignee = inputName.trim();
     }
 
-    // Rule B: Completely clear out the assignee context if moved to Verified
     if (newStatus === 'Verified') {
       updatedAssignee = '';
     }
 
-    // Commit state changes to DB
     const { error } = await supabase
       .from('bugs')
       .update({ status: newStatus, assignedTo: updatedAssignee })
@@ -250,12 +282,22 @@ export default function App() {
       return;
     }
 
-    // Update local react state
     setBugs(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus, assignedTo: updatedAssignee } : b));
   };
 
+  // If user is not authenticated, render Auth screen
+  if (!session) {
+    return <Auth />;
+  }
+
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1200px', margin: '0 auto' }}>
+      {/* Top Bar showing active session details */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f5f5f5', padding: '10px 15px', borderRadius: '5px', marginBottom: '20px' }}>
+        <span>Logged in as: <strong>{session.user.email}</strong></span>
+        <button onClick={handleLogout} style={{ padding: '6px 12px', backgroundColor: '#e0e0e0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}>Log Out</button>
+      </div>
+
       <h1>QA Test Case & Bug Tracker</h1>
       <hr />
 
@@ -391,7 +433,6 @@ export default function App() {
               
               <p style={{ margin: '4px 0', fontSize: '14px', color: '#444' }}><strong>Description:</strong> {bug.description || "None Specified"}</p>
               
-              {/* Linked TC field editor */}
               <div style={{ margin: '6px 0', fontSize: '14px' }}>
                 <label htmlFor={`tc-input-${bug.id}`} style={{ color: '#d32f2f', fontWeight: 'bold' }}>Linked TC ID: </label>
                 <input 
@@ -404,7 +445,6 @@ export default function App() {
                 <span style={{ color: '#555', marginLeft: '15px' }}><strong>Build:</strong> {bug.appVersionBuild}</span>
               </div>
 
-              {/* Display Current Active Developer Assignee Context */}
               <p style={{ margin: '6px 0', fontSize: '14px' }}>
                 <strong>Current Assignee:</strong>{' '}
                 <span style={{ color: bug.assignedTo ? '#0288d1' : '#888', fontWeight: bug.assignedTo ? 'bold' : 'normal' }}>
