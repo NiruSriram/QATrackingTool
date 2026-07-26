@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
-import ConfirmEmail from './ConfirmEmail';
 
 // Initial State Structures
 const initialTestCase = {
@@ -46,12 +45,6 @@ export default function App() {
   // Forms state
   const [testCaseForm, setTestCaseForm] = useState(initialTestCase);
   const [bugForm, setBugForm] = useState(initialBug);
-
-  // Check if current URL path is the confirmation page
-  const isConfirmRoute = window.location.pathname.includes('/confirm') || 
-                         window.location.search.includes('code=') ||
-                         window.location.hash.includes('access_token=');
-  
 
   // 1. Auth Listener & Session Handler
   useEffect(() => {
@@ -109,7 +102,6 @@ export default function App() {
     const targetTC = testCases.find(tc => tc.id === id);
     if (!targetTC) return;
 
-    // 1. Update status in Supabase
     const { error } = await supabase
       .from('test_cases')
       .update({ status: newStatus })
@@ -120,10 +112,8 @@ export default function App() {
       return;
     }
 
-    // 2. Optimistically update local state
     setTestCases(prev => prev.map(tc => tc.id === id ? { ...tc, status: newStatus } : tc));
 
-    // 3. Handle Auto-Bug trigger if status is Fail
     if (newStatus === 'Fail') {
       const generatedBugId = `BUG_${id}_${Date.now().toString().slice(-4)}`;
       const autoBugData = {
@@ -155,32 +145,27 @@ export default function App() {
   const handleAddTestCase = async (e) => {
     e.preventDefault();
 
-    // 1. Check for Duplicate Test Case ID
     const idExists = testCases.some(tc => tc.id.trim().toLowerCase() === testCaseForm.id.trim().toLowerCase());
     if (idExists) {
       alert(`Validation Error: A test case with ID "${testCaseForm.id}" already exists. Test IDs must be unique.`);
       return;
     }
 
-    // 2. Validate Test Steps field is not blank
     if (!testCaseForm.testSteps || testCaseForm.testSteps.trim() === '') {
       alert('Validation Error: The "Test Steps" field cannot be left blank.');
       return;
     }
 
-    // 3. Validate Expected Result field is not blank
     if (!testCaseForm.expectedResult || testCaseForm.expectedResult.trim() === '') {
       alert('Validation Error: The "Expected Result" field cannot be left blank.');
       return;
     }
 
-    // Attach user_id for multi-tenant mapping
     const payload = {
       ...testCaseForm,
       user_id: session.user.id
     };
 
-    // Write to Supabase
     const { error } = await supabase.from('test_cases').insert([payload]);
     if (error) {
       alert(`Error creating test case: ${error.message}`);
@@ -200,13 +185,11 @@ export default function App() {
       return;
     }
 
-    // Attach user_id for multi-tenant mapping
     const payload = {
       ...bugForm,
       user_id: session.user.id
     };
 
-    // Write to Supabase
     const { error } = await supabase.from('bugs').insert([payload]);
     if (error) {
       alert(`Error creating bug record: ${error.message}`);
@@ -291,11 +274,6 @@ export default function App() {
 
     setBugs(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus, assignedTo: updatedAssignee } : b));
   };
-
-  // 3. Render manual confirmation screen if user came from an email redirect
-  if (!session && isConfirmRoute) {
-    return <ConfirmEmail onConfirmed={() => window.location.href = '/'} />;
-  }
 
   // If user is not authenticated, render Auth screen
   if (!session) {
