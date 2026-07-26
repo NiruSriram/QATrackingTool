@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 
 export default function Auth() {
   const [isSigningUp, setIsSigningUp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false); // Step 2: OTP screen
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otpToken, setOtpToken] = useState('');
@@ -18,15 +18,16 @@ export default function Auth() {
 
     if (isSigningUp) {
       // Step A: Register user (Supabase emails a 6-digit OTP code)
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
       });
 
       if (error) {
         setErrorMsg(error.message);
-      } else {
-        // Show OTP code input screen
+      } else if (data.user) {
+        // Prevent premature session access before OTP verification
+        await supabase.auth.signOut();
         setIsVerifyingOtp(true);
       }
     } else {
@@ -37,7 +38,12 @@ export default function Auth() {
       });
 
       if (error) {
-        setErrorMsg(error.message);
+        if (error.message.includes('Email not confirmed')) {
+          setErrorMsg('Please enter the 6-digit verification code sent to your email.');
+          setIsVerifyingOtp(true);
+        } else {
+          setErrorMsg(error.message);
+        }
       }
     }
 
@@ -50,14 +56,27 @@ export default function Auth() {
     setLoading(true);
     setErrorMsg('');
 
-    const { error } = await supabase.auth.verifyOtp({
+    // Step A: Verify the OTP token against Supabase Auth
+    const { error: verifyError } = await supabase.auth.verifyOtp({
       email,
       token: otpToken.trim(),
       type: 'signup',
     });
 
-    if (error) {
-      setErrorMsg(error.message);
+    if (verifyError) {
+      setErrorMsg(verifyError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Step B: Authenticate the user now that the email is verified
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (loginError) {
+      setErrorMsg(loginError.message);
     }
     setLoading(false);
   };
