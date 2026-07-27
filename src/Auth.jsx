@@ -20,7 +20,7 @@ export default function Auth() {
   };
 
   // 1. Initial Sign Up (Creates auth.users account using OTP as temporary password)
-  // 1. Initial Sign Up (Database trigger will overwrite password with 6-digit OTP)
+  // Database trigger will overwrite password with 6-digit OTP
   const handleSignUp = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -29,22 +29,28 @@ export default function Auth() {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Call standard signUp with email (trigger sets actual OTP as password)
-    const { data, error } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password: 'TemporaryPlaceholder123!', 
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: 'TemporaryPlaceholder123!',
+      });
 
-    if (error) {
-      setErrorMsg(error.message);
-    } else if (data.user) {
-      // Force sign out so session isn't active until they verify OTP
-      await supabase.auth.signOut();
-      setSuccessMsg('Account created! Check your profiles table for your 6-digit OTP.');
-      setIsSigningUp(false);
+      if (error) {
+        // Safely extract error string even if error.message is missing
+        const msg = typeof error === 'string' 
+          ? error 
+          : error?.message || error?.error_description || JSON.stringify(error);
+        setErrorMsg(msg !== '{}' ? msg : 'Signup failed. Please check database triggers.');
+      } else if (data?.user) {
+        await supabase.auth.signOut();
+        setSuccessMsg('Account created! Check your profiles table for your 6-digit OTP.');
+        setIsSigningUp(false);
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'An unexpected error occurred.');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   // 2. First-Time OTP Login & Password Change Workflow
