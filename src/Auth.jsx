@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
-export default function Auth() {
+export default function Auth({ initialPasswordReset = false }) {
   const [isSigningUp, setIsSigningUp] = useState(false);
-  const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
+  const [requiresPasswordReset, setRequiresPasswordReset] = useState(initialPasswordReset);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,6 +13,11 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Synchronize state if App.jsx flags a mandatory password change
+  useEffect(() => {
+    setRequiresPasswordReset(initialPasswordReset);
+  }, [initialPasswordReset]);
 
   // 1. Initial Sign Up
   const handleSignUp = async (e) => {
@@ -49,7 +54,7 @@ export default function Auth() {
     }
   };
 
-  // 2. Standard Sign In (Checks if forced password update is required)
+  // 2. Standard Sign In
   const handleSignIn = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -58,7 +63,7 @@ export default function Auth() {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Authenticate with Supabase Auth (works for both 6-digit OTP or user's permanent password)
+    // Authenticate with Supabase Auth
     const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password: password.trim(),
@@ -73,7 +78,7 @@ export default function Auth() {
     const user = authData?.user;
 
     if (user) {
-      // Check profile to see if user is logging in with an unredeemed OTP
+      // Query profile directly after successful auth call
       const { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('must_change_password')
@@ -84,12 +89,8 @@ export default function Auth() {
         console.error("Profile check error:", profileErr);
       }
 
-      // If user must change password, transition immediately to the forced reset screen
       if (profile?.must_change_password) {
         setRequiresPasswordReset(true);
-      } else {
-        // Standard user — reload or redirect to app dashboard
-        window.location.reload();
       }
     }
 
@@ -122,7 +123,7 @@ export default function Auth() {
 
       if (updateAuthErr) throw updateAuthErr;
 
-      // Step B: Mark OTP as redeemed and clear plain-text OTP from profiles
+      // Step B: Clear OTP flags in profiles table
       const { data: { user } } = await supabase.auth.getUser();
 
       const { error: updateProfileErr } = await supabase
@@ -136,7 +137,7 @@ export default function Auth() {
 
       if (updateProfileErr) throw updateProfileErr;
 
-      // Step C: Complete — refresh page to launch dashboard
+      // Step C: Trigger reload so App.jsx re-checks profile and grants full access
       window.location.reload();
     } catch (err) {
       setErrorMsg(err?.message || 'Failed to update password.');
@@ -167,7 +168,7 @@ export default function Auth() {
         </p>
       )}
 
-      {/* VIEW 1: Forced Password Change Screen (Triggers automatically after logging in with temporary OTP) */}
+      {/* VIEW 1: Forced Password Change Screen */}
       {requiresPasswordReset ? (
         <form onSubmit={handleForcePasswordChange}>
           <p style={{ fontSize: '13px', color: '#555', marginBottom: '15px' }}>
@@ -230,7 +231,7 @@ export default function Auth() {
           </button>
         </form>
 
-      /* VIEW 3: Standard Sign In (Handles both initial OTP login & standard password login) */
+      /* VIEW 3: Standard Sign In */
       ) : (
         <form onSubmit={handleSignIn}>
           <div style={{ marginBottom: '15px' }}>
