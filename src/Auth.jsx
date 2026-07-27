@@ -19,9 +19,8 @@ export default function Auth() {
     return Math.random().toString(36).slice(-8) + 'A1!';
   };
 
-  // 1. Initial Sign Up (Creates auth.users account using OTP as temporary password)
-  // Database trigger will overwrite password with 6-digit OTP
-  // 1. Initial Sign Up (Uses a generated 6-digit OTP as initial password)
+  // 1. Initial Sign Up 
+  // 1. Initial Sign Up
   const handleSignUp = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -30,33 +29,28 @@ export default function Auth() {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Generate a random 6-digit OTP
+    // Generate a random 6-digit OTP string
     const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
 
     try {
-      // Step A: Register the account with Supabase Auth using the OTP as password
+      // Pass the generated OTP in options.data so the DB trigger can capture it
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: generatedOTP,
+        options: {
+          data: {
+            otp: generatedOTP,
+          },
+        },
       });
 
       if (authError) throw authError;
 
       if (authData?.user) {
-        // Step B: Save the generated OTP into public.profiles
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({ otp: generatedOTP })
-          .eq('id', authData.user.id);
-
-        if (profileError) {
-          console.error("Profile sync error:", profileError);
-        }
-
-        // Step C: Sign out immediately so they must verify OTP to log in
+        // Sign out immediately so session is not active until they verify OTP
         await supabase.auth.signOut();
 
-        setSuccessMsg(`Account created! Your temporary OTP is: ${generatedOTP}`);
+        setSuccessMsg('Account created successfully! Check your profiles table for your 6-digit OTP.');
         setIsSigningUp(false);
       }
     } catch (err) {
