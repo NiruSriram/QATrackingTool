@@ -3,23 +3,17 @@ import { supabase } from './supabaseClient';
 
 export default function Auth() {
   const [isSigningUp, setIsSigningUp] = useState(false);
-  const [isFirstTimeOtp, setIsFirstTimeOtp] = useState(false);
+  const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [otpToken, setOtpToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Generate a random 8-character string for temporary account password
-  const generateRandomOTP = () => {
-    return Math.random().toString(36).slice(-8) + 'A1!';
-  };
-
-  // 1. Initial Sign Up 
   // 1. Initial Sign Up
   const handleSignUp = async (e) => {
     e.preventDefault();
@@ -28,12 +22,9 @@ export default function Auth() {
     setSuccessMsg('');
 
     const cleanEmail = email.trim().toLowerCase();
-
-    // Generate a random 6-digit OTP string
     const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
 
     try {
-      // Pass the generated OTP in options.data so the DB trigger can capture it
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: generatedOTP,
@@ -47,9 +38,7 @@ export default function Auth() {
       if (authError) throw authError;
 
       if (authData?.user) {
-        // Sign out immediately so session is not active until they verify OTP
         await supabase.auth.signOut();
-
         setSuccessMsg('Account created successfully! Check your profiles table for your 6-digit OTP.');
         setIsSigningUp(false);
       }
@@ -60,8 +49,8 @@ export default function Auth() {
     }
   };
 
-  // 2. First-Time OTP Login & Password Change Workflow
-  const handleVerifyOtpAndChangePassword = async (e) => {
+  // 2. Standard Sign In (Checks if forced password update is required)
+  const handleSignIn = async (e) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
@@ -69,102 +58,98 @@ export default function Auth() {
 
     const cleanEmail = email.trim().toLowerCase();
 
+    // Authenticate with Supabase Auth (works for both 6-digit OTP or user's permanent password)
+    const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password: password.trim(),
+    });
+
+    if (loginError) {
+      setErrorMsg('Invalid email or password / OTP.');
+      setLoading(false);
+      return;
+    }
+
+    const user = authData?.user;
+
+    if (user) {
+      // Check profile to see if user is logging in with an unredeemed OTP
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('must_change_password')
+        .eq('id', user.id)
+        .single();
+
+      if (profileErr) {
+        console.error("Profile check error:", profileErr);
+      }
+
+      // If user must change password, transition immediately to the forced reset screen
+      if (profile?.must_change_password) {
+        setRequiresPasswordReset(true);
+      } else {
+        // Standard user — reload or redirect to app dashboard
+        window.location.reload();
+      }
+    }
+
+    setLoading(false);
+  };
+
+  // 3. Forced Password Change (Triggered post-OTP login)
+  const handleForcePasswordChange = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg('');
+
     if (newPassword.length < 6) {
       setErrorMsg('New password must be at least 6 characters long.');
       setLoading(false);
       return;
     }
 
-    // Step A: Authenticate against auth.users using the OTP as the password
-    const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password: otpToken.trim(),
-    });
-
-    if (loginError) {
-      setErrorMsg('Invalid email or OTP code. Please check your credentials.');
+    if (newPassword !== confirmPassword) {
+      setErrorMsg('Passwords do not match.');
       setLoading(false);
       return;
     }
 
-    const userId = authData.user.id;
+    try {
+      // Step A: Update password in Supabase Auth system
+      const { error: updateAuthErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
 
-    // Step B: Verify in public.profiles that this OTP hasn't been redeemed already
-    const { data: profile, error: profileErr } = await supabase
-      .from('profiles')
-      .select('otp_verified')
-      .eq('id', userId)
-      .single();
+      if (updateAuthErr) throw updateAuthErr;
 
-    if (profileErr) {
-      await supabase.auth.signOut();
-      setErrorMsg('Could not fetch user profile record.');
+      // Step B: Mark OTP as redeemed and clear plain-text OTP from profiles
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { error: updateProfileErr } = await supabase
+        .from('profiles')
+        .update({
+          must_change_password: false,
+          otp_verified: true,
+          otp: null,
+        })
+        .eq('id', user.id);
+
+      if (updateProfileErr) throw updateProfileErr;
+
+      // Step C: Complete — refresh page to launch dashboard
+      window.location.reload();
+    } catch (err) {
+      setErrorMsg(err?.message || 'Failed to update password.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (profile.otp_verified) {
-      await supabase.auth.signOut();
-      setErrorMsg('This temporary OTP has already been used. Please log in using standard Sign In with your updated password.');
-      setLoading(false);
-      return;
-    }
-
-    // Step C: Update password in auth.users
-    const { error: updateAuthErr } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-
-    if (updateAuthErr) {
-      setErrorMsg(`Failed to update password: ${updateAuthErr.message}`);
-      setLoading(false);
-      return;
-    }
-
-    // Step D: Mark OTP as redeemed and clear plain-text OTP from profiles
-    const { error: updateProfileErr } = await supabase
-      .from('profiles')
-      .update({
-        otp_verified: true,
-        must_change_password: false,
-        otp: null,
-      })
-      .eq('id', userId);
-
-    if (updateProfileErr) {
-      setErrorMsg(`Password updated, but profile status sync failed: ${updateProfileErr.message}`);
-      setLoading(false);
-      return;
-    }
-
-    // Step E: Complete — reload page to launch dashboard with active session
-    window.location.reload();
-  };
-
-  // 3. Standard Sign In (For returning users with updated password)
-  const handleStandardSignIn = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password,
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
-    }
-    setLoading(false);
   };
 
   return (
     <div style={{ maxWidth: '400px', margin: '80px auto', padding: '30px', border: '1px solid #ddd', borderRadius: '8px', fontFamily: 'sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
       <h2 style={{ marginTop: 0, textAlign: 'center' }}>
-        {isFirstTimeOtp 
-          ? 'First-Time OTP Login' 
+        {requiresPasswordReset 
+          ? 'Set New Password' 
           : isSigningUp 
           ? 'Create Account' 
           : 'Sign In'}
@@ -182,33 +167,14 @@ export default function Auth() {
         </p>
       )}
 
-      {/* VIEW 1: First-Time OTP Verification & Mandatory Password Reset */}
-      {isFirstTimeOtp ? (
-        <form onSubmit={handleVerifyOtpAndChangePassword}>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>Email Address</label>
-            <input 
-              type="email" 
-              required 
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }} 
-            />
-          </div>
+      {/* VIEW 1: Forced Password Change Screen (Triggers automatically after logging in with temporary OTP) */}
+      {requiresPasswordReset ? (
+        <form onSubmit={handleForcePasswordChange}>
+          <p style={{ fontSize: '13px', color: '#555', marginBottom: '15px' }}>
+            You logged in using a temporary OTP. Please create a permanent password to continue.
+          </p>
 
           <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>Temporary OTP</label>
-            <input 
-              type="text" 
-              placeholder="Enter received OTP" 
-              required 
-              value={otpToken} 
-              onChange={(e) => setOtpToken(e.target.value)} 
-              style={{ width: '100%', padding: '10px', fontSize: '16px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }} 
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>New Permanent Password</label>
             <input 
               type="password" 
@@ -220,20 +186,25 @@ export default function Auth() {
             />
           </div>
 
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>Confirm Password</label>
+            <input 
+              type="password" 
+              placeholder="Re-enter new password"
+              required 
+              value={confirmPassword} 
+              onChange={(e) => setConfirmPassword(e.target.value)} 
+              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }} 
+            />
+          </div>
+
           <button 
             type="submit" 
             disabled={loading} 
             style={{ width: '100%', padding: '10px', backgroundColor: '#2e7d32', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
           >
-            {loading ? 'Verifying & Updating...' : 'Verify OTP & Set Password'}
+            {loading ? 'Updating Password...' : 'Save Password & Continue'}
           </button>
-
-          <p 
-            style={{ marginTop: '15px', textAlign: 'center', cursor: 'pointer', color: '#1976d2', fontSize: '13px' }} 
-            onClick={() => { setIsFirstTimeOtp(false); setErrorMsg(''); setSuccessMsg(''); }}
-          >
-            ← Back to Standard Sign In
-          </p>
         </form>
 
       /* VIEW 2: Standard Sign Up */
@@ -259,9 +230,9 @@ export default function Auth() {
           </button>
         </form>
 
-      /* VIEW 3: Standard Sign In */
+      /* VIEW 3: Standard Sign In (Handles both initial OTP login & standard password login) */
       ) : (
-        <form onSubmit={handleStandardSignIn}>
+        <form onSubmit={handleSignIn}>
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>Email Address</label>
             <input 
@@ -274,9 +245,10 @@ export default function Auth() {
           </div>
 
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>Password</label>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>Password or OTP</label>
             <input 
               type="password" 
+              placeholder="Enter password or 6-digit OTP"
               required 
               value={password} 
               onChange={(e) => setPassword(e.target.value)} 
@@ -294,8 +266,8 @@ export default function Auth() {
         </form>
       )}
 
-      {/* Navigation Links */}
-      {!isFirstTimeOtp && (
+      {/* Navigation Link */}
+      {!requiresPasswordReset && (
         <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '13px' }}>
           <p 
             style={{ cursor: 'pointer', color: '#1976d2', margin: '5px 0' }} 
@@ -303,15 +275,6 @@ export default function Auth() {
           >
             {isSigningUp ? 'Already registered? Sign In' : "Don't have an account? Sign Up"}
           </p>
-
-          {!isSigningUp && (
-            <p 
-              style={{ cursor: 'pointer', color: '#555', textDecoration: 'underline', margin: '8px 0 0 0' }} 
-              onClick={() => { setIsFirstTimeOtp(true); setErrorMsg(''); setSuccessMsg(''); }}
-            >
-              First time logging in with an OTP? Click here
-            </p>
-          )}
         </div>
       )}
     </div>
