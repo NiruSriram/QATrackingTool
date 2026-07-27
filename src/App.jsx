@@ -51,37 +51,54 @@ export default function App() {
 
   // Helper to verify if the user must reset their password
   const checkProfile = async (userId) => {
-    setCheckingProfile(true);
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('must_change_password')
-      .eq('id', userId)
-      .single();
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('must_change_password')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (!error && profile) {
-      setMustChangePassword(!!profile.must_change_password);
-    } else {
+      if (error) {
+        console.error("Error fetching profile:", error);
+      }
+
+      // Force strict boolean comparison
+      if (profile && profile.must_change_password === true) {
+        setMustChangePassword(true);
+      } else {
+        setMustChangePassword(false);
+      }
+    } catch (err) {
+      console.error("Profile check failed:", err);
       setMustChangePassword(false);
+    } finally {
+      setCheckingProfile(false);
     }
-    setCheckingProfile(false);
   };
 
   // 1. Auth Listener & Session Handler
   useEffect(() => {
+    // Check initial session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
         checkProfile(session.user.id);
       } else {
+        setMustChangePassword(false);
         setCheckingProfile(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Listen for auth changes (sign in, sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      
       if (session?.user) {
+        // Re-check profile whenever session changes
         checkProfile(session.user.id);
       } else {
+        // Clear all session & reset flags on signout
+        setSession(null);
         setMustChangePassword(false);
         setCheckingProfile(false);
       }
@@ -97,6 +114,16 @@ export default function App() {
       fetchBugs();
     }
   }, [session, mustChangePassword, checkingProfile]);
+
+  // Loading state while checking auth/profile
+  if (checkingProfile) {
+    return <div style={{ padding: '40px', textAlign: 'center' }}>Loading auth state...</div>;
+  }
+
+  // Pass initialPasswordReset={mustChangePassword} to Auth
+  if (!session || mustChangePassword) {
+    return <Auth initialPasswordReset={mustChangePassword} />;
+  }
 
   const fetchTestCases = async () => {
     const { data, error } = await supabase

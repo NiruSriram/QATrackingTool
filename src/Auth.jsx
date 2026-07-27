@@ -54,7 +54,7 @@ export default function Auth({ initialPasswordReset = false }) {
     }
   };
 
-  // 2. Standard Sign In
+  // Sign In
   const handleSignIn = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -63,8 +63,7 @@ export default function Auth({ initialPasswordReset = false }) {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Authenticate with Supabase Auth
-    const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
+    const { error: loginError } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password: password.trim(),
     });
@@ -75,26 +74,8 @@ export default function Auth({ initialPasswordReset = false }) {
       return;
     }
 
-    const user = authData?.user;
-
-    if (user) {
-      // Query profile directly after successful auth call
-      const { data: profile, error: profileErr } = await supabase
-        .from('profiles')
-        .select('must_change_password')
-        .eq('id', user.id)
-        .single();
-
-      if (profileErr) {
-        console.error("Profile check error:", profileErr);
-      }
-
-      if (profile?.must_change_password) {
-        setRequiresPasswordReset(true);
-      }
-    }
-
-    setLoading(false);
+    // App.jsx will catch onAuthStateChange, check the profiles table, 
+    // and pass initialPasswordReset={true} back into Auth.jsx automatically!
   };
 
   // 3. Forced Password Change (Triggered post-OTP login)
