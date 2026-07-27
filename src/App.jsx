@@ -58,10 +58,6 @@ export default function App() {
         .eq('id', userId)
         .maybeSingle();
 
-        console.log("Logged in User ID:", userId);
-        console.log("Profile DB Output:", profile);
-        console.log("Profile Query Error:", error);
-
       if (error) {
         console.error("Error fetching profile:", error);
       }
@@ -150,11 +146,18 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+  try {
     await supabase.auth.signOut();
+  } catch (err) {
+    console.warn("Logout request error (session may already be invalid):", err);
+  } finally {
+    // Always clear local state regardless of server response
+    setSession(null);
     setTestCases([]);
     setBugs([]);
     setMustChangePassword(false);
-  };
+  }
+};
 
   const toggleExpand = (id) => {
     setExpandedTestCases(prev => ({ ...prev, [id]: !prev[id] }));
