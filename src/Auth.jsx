@@ -20,6 +20,7 @@ export default function Auth() {
   };
 
   // 1. Initial Sign Up (Creates auth.users account using OTP as temporary password)
+  // 1. Initial Sign Up (Database trigger will overwrite password with 6-digit OTP)
   const handleSignUp = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -27,25 +28,19 @@ export default function Auth() {
     setSuccessMsg('');
 
     const cleanEmail = email.trim().toLowerCase();
-    const temporaryOTP = generateRandomOTP();
 
-    // Create user in Supabase Auth.
-    // Note: Your SQL trigger (handle_new_user) will automatically run on the DB
-    // and populate public.profiles with the user details.
+    // Call standard signUp with email (trigger sets actual OTP as password)
     const { data, error } = await supabase.auth.signUp({
       email: cleanEmail,
-      password: temporaryOTP,
+      password: 'TemporaryPlaceholder123!', 
     });
 
     if (error) {
       setErrorMsg(error.message);
     } else if (data.user) {
-      // Sign out immediately so they aren't logged in until OTP verification
+      // Force sign out so session isn't active until they verify OTP
       await supabase.auth.signOut();
-      
-      // Update profile with the exact temporary OTP used for auth
-      // (Bypasses RLS by using public signup context or DB default)
-      setSuccessMsg('Account created successfully! Check your database or contact your admin to receive your temporary OTP.');
+      setSuccessMsg('Account created! Check your profiles table for your 6-digit OTP.');
       setIsSigningUp(false);
     }
 
