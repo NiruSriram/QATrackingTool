@@ -58,6 +58,10 @@ export default function App() {
         .eq('id', userId)
         .maybeSingle();
 
+        console.log("Logged in User ID:", userId);
+        console.log("Profile DB Output:", profile);
+        console.log("Profile Query Error:", error);
+
       if (error) {
         console.error("Error fetching profile:", error);
       }
