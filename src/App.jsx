@@ -36,6 +36,9 @@ const initialBug = {
 
 export default function App() {
   const [session, setSession] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [checkingProfile, setCheckingProfile] = useState(true);
+
   const [testCases, setTestCases] = useState([]);
   const [bugs, setBugs] = useState([]);
   
@@ -46,26 +49,54 @@ export default function App() {
   const [testCaseForm, setTestCaseForm] = useState(initialTestCase);
   const [bugForm, setBugForm] = useState(initialBug);
 
+  // Helper to verify if the user must reset their password
+  const checkProfile = async (userId) => {
+    setCheckingProfile(true);
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('must_change_password')
+      .eq('id', userId)
+      .single();
+
+    if (!error && profile) {
+      setMustChangePassword(!!profile.must_change_password);
+    } else {
+      setMustChangePassword(false);
+    }
+    setCheckingProfile(false);
+  };
+
   // 1. Auth Listener & Session Handler
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (session?.user) {
+        checkProfile(session.user.id);
+      } else {
+        setCheckingProfile(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session?.user) {
+        checkProfile(session.user.id);
+      } else {
+        setMustChangePassword(false);
+        setCheckingProfile(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Fetch Data when active Session changes
+  // 2. Fetch Data ONLY when authenticated AND password change is NOT required
   useEffect(() => {
-    if (session) {
+    if (session && !mustChangePassword && !checkingProfile) {
       fetchTestCases();
       fetchBugs();
     }
-  }, [session]);
+  }, [session, mustChangePassword, checkingProfile]);
 
   const fetchTestCases = async () => {
     const { data, error } = await supabase
@@ -91,6 +122,7 @@ export default function App() {
     await supabase.auth.signOut();
     setTestCases([]);
     setBugs([]);
+    setMustChangePassword(false);
   };
 
   const toggleExpand = (id) => {
@@ -275,11 +307,17 @@ export default function App() {
     setBugs(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus, assignedTo: updatedAssignee } : b));
   };
 
-  // If user is not authenticated, render Auth screen
-  if (!session) {
-    return <Auth />;
+  // 1. Show loading indicator while evaluating profile status
+  if (checkingProfile) {
+    return <div style={{ textAlign: 'center', marginTop: '80px', fontFamily: 'sans-serif' }}>Loading user session...</div>;
   }
 
+  // 2. Render Auth screen if not authenticated OR if mandatory password reset is flagged
+  if (!session || mustChangePassword) {
+    return <Auth initialPasswordReset={mustChangePassword} />;
+  }
+
+  // 3. Render full app view ONLY when authenticated and password has been reset
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Top Bar showing active session details */}
