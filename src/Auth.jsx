@@ -21,6 +21,7 @@ export default function Auth() {
 
   // 1. Initial Sign Up (Creates auth.users account using OTP as temporary password)
   // Database trigger will overwrite password with 6-digit OTP
+  // 1. Initial Sign Up (Uses a generated 6-digit OTP as initial password)
   const handleSignUp = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -29,25 +30,37 @@ export default function Auth() {
 
     const cleanEmail = email.trim().toLowerCase();
 
+    // Generate a random 6-digit OTP
+    const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
+
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // Step A: Register the account with Supabase Auth using the OTP as password
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
-        password: 'TemporaryPlaceholder123!',
+        password: generatedOTP,
       });
 
-      if (error) {
-        // Safely extract error string even if error.message is missing
-        const msg = typeof error === 'string' 
-          ? error 
-          : error?.message || error?.error_description || JSON.stringify(error);
-        setErrorMsg(msg !== '{}' ? msg : 'Signup failed. Please check database triggers.');
-      } else if (data?.user) {
+      if (authError) throw authError;
+
+      if (authData?.user) {
+        // Step B: Save the generated OTP into public.profiles
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ otp: generatedOTP })
+          .eq('id', authData.user.id);
+
+        if (profileError) {
+          console.error("Profile sync error:", profileError);
+        }
+
+        // Step C: Sign out immediately so they must verify OTP to log in
         await supabase.auth.signOut();
-        setSuccessMsg('Account created! Check your profiles table for your 6-digit OTP.');
+
+        setSuccessMsg(`Account created! Your temporary OTP is: ${generatedOTP}`);
         setIsSigningUp(false);
       }
     } catch (err) {
-      setErrorMsg(err.message || 'An unexpected error occurred.');
+      setErrorMsg(err?.message || 'An error occurred during signup.');
     } finally {
       setLoading(false);
     }
